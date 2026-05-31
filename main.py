@@ -25,10 +25,9 @@ from aiogram.filters import Command
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BOT_TOKEN      = BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "8748736196:AAHBGM7DnJaYZKS43h5XOT_Lc9PLXc8sOic")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEV_DOMAIN     = os.environ.get("REPLIT_DEV_DOMAIN", "localhost")
-# In production, MINI_APP_URL is set to the deployed .replit.app domain
 MINI_APP_URL   = os.environ.get("MINI_APP_URL", "")
 APP_URL        = MINI_APP_URL if MINI_APP_URL else f"https://{DEV_DOMAIN}"
 IS_PRODUCTION  = bool(MINI_APP_URL)
@@ -49,12 +48,17 @@ HEADERS = {
         "Chrome/124.0.0.0 Safari/537.36"
     )
 }
-GEMINI_PROMPT = (
-    "Опиши предмет на фото для точного поиска на маркетплейсах. "
-    "Выдели уникальные детали: материал, форму, узоры, цвет. "
-    "Не 'ожерелье', а 'ожерелье жемчуг бильярдные шары'. "
-    "Без точки в конце. Без лишних слов. Только поисковый запрос."
-)
+
+# Gemini возвращает JSON с отдельным запросом для каждой площадки
+GEMINI_PROMPT = """Посмотри на товар на фото. Создай поисковый запрос для каждого маркетплейса — каждый оптимизирован под алгоритм и стиль этой площадки.
+
+Верни ТОЛЬКО JSON, без markdown, без ```, без пояснений:
+{
+  "wb": "запрос для Wildberries: как продавцы пишут название — тип товара + материал + цвет + фасон, коротко, по-русски",
+  "oz": "запрос для Ozon: чуть полнее чем WB, включи характеристики которые фильтруют покупатели",
+  "ali": "query for AliExpress in English: product type + material + color + style, keywords only",
+  "ym": "запрос для Яндекс Маркет: естественный русский язык, как человек ищет в поисковике"
+}"""
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -68,7 +72,7 @@ album_tasks:  dict[str, asyncio.Task]  = {}
 
 # ── History ───────────────────────────────────────────────────────────────────
 
-def load_history() -> dict[int, list[str]]:
+def load_history() -> dict:
     if not os.path.exists(HISTORY_FILE):
         return defaultdict(list)
     try:
@@ -86,20 +90,21 @@ def persist_history():
     except Exception as e:
         logging.warning(f"History save error: {e}")
 
-user_history: dict[int, list[str]] = load_history()
+user_history: dict = load_history()
 
-def save_to_history(user_id: int, query: str):
+def save_to_history(user_id: int, queries: dict):
     h = user_history[user_id]
-    if query in h:
-        h.remove(query)
-    h.insert(0, query)
+    wb = queries.get("wb", "")
+    # Убираем дубликат если уже есть
+    h = [item for item in h if (item.get("wb", "") if isinstance(item, dict) else item) != wb]
+    h.insert(0, queries)
     user_history[user_id] = h[:HISTORY_LIMIT]
     persist_history()
 
 
 # ── Gemini ────────────────────────────────────────────────────────────────────
 
-def analyze_image(image_bytes: bytes) -> str:
+def analyze_image(image_bytes: bytes) -> dict:
     response = gemini_client.models.generate_content(
         model="gemini-2.5-flash",
         contents=[
@@ -107,21 +112,36 @@ def analyze_image(image_bytes: bytes) -> str:
             GEMINI_PROMPT,
         ],
     )
-    return response.text.strip().rstrip(".")
+    text = response.text.strip()
+    # Убираем markdown-блоки если модель их добавила
+    text = re.sub(r"```json\s*|\s*```", "", text).strip()
+    queries = json.loads(text)
+    # Гарантируем что все ключи есть
+    fallback = queries.get("wb") or queries.get("oz") or "товар"
+    queries.setdefault("wb", fallback)
+    queries.setdefault("oz", fallback)
+    queries.setdefault("ali", fallback)
+    queries.setdefault("ym", fallback)
+    return queries
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def build_keyboard(query: str) -> InlineKeyboardMarkup:
-    e = quote(query)
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Wildberries",
-            url=f"https://www.wildberries.ru/catalog/0/search.aspx?search={e}"),
-        InlineKeyboardButton(text="Ozon",
-            url=f"https://www.ozon.ru/search/?text={e}"),
-        InlineKeyboardButton(text="AliExpress",
-            url=f"https://aliexpress.ru/wholesale?SearchText={e}"),
-    ]])
+def build_keyboard(queries: dict) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Wildberries",
+                url=f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote(queries['wb'])}"),
+            InlineKeyboardButton(text="Ozon",
+                url=f"https://www.ozon.ru/search/?text={quote(queries['oz'])}"),
+        ],
+        [
+            InlineKeyboardButton(text="AliExpress",
+                url=f"https://aliexpress.ru/wholesale?SearchText={quote(queries['ali'])}"),
+            InlineKeyboardButton(text="Яндекс Маркет",
+                url=f"https://market.yandex.ru/search?text={quote(queries['ym'])}"),
+        ],
+    ])
 
 def fetch_pinterest_image(url: str) -> bytes | None:
     try:
@@ -143,14 +163,15 @@ def fetch_pinterest_image(url: str) -> bytes | None:
 
 async def process_single_photo(message: Message, image_data: bytes):
     try:
-        query = analyze_image(image_data)
+        queries = analyze_image(image_data)
     except Exception as e:
         logging.error(f"Gemini error: {e}")
         await message.answer("Не удалось распознать товар.")
         return
-    save_to_history(message.from_user.id, query)
-    await message.answer(f"*{query}*", parse_mode="Markdown",
-                         reply_markup=build_keyboard(query))
+    save_to_history(message.from_user.id, queries)
+    display = queries.get("wb", "")
+    await message.answer(f"*{display}*", parse_mode="Markdown",
+                         reply_markup=build_keyboard(queries))
 
 async def download_photo(message: Message) -> bytes | None:
     try:
@@ -178,9 +199,18 @@ async def process_album(group_id: str):
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Открыть", web_app=WebAppInfo(url=APP_URL))
+        InlineKeyboardButton(text="🔍 Открыть Aesthet", web_app=WebAppInfo(url=APP_URL))
     ]])
-    await message.answer("Aesthet", reply_markup=keyboard)
+    welcome = (
+        "👋 Привет! Я *Aesthet* — бот для поиска товаров по фото.\n\n"
+        "📸 Просто отправь мне фото любой вещи, и я найду её на:\n"
+        "• Wildberries\n"
+        "• Ozon\n"
+        "• AliExpress\n"
+        "• Яндекс Маркет\n\n"
+        "Или открой мини-приложение ниже и загрузи фото там 👇"
+    )
+    await message.answer(welcome, parse_mode="Markdown", reply_markup=keyboard)
 
 
 @dp.message(Command("history"))
@@ -189,20 +219,31 @@ async def cmd_history(message: Message):
     if not history:
         await message.answer("История пуста.")
         return
-    buttons = [
-        [InlineKeyboardButton(text=q, callback_data=f"search:{q[:50]}")]
-        for q in history
-    ]
+    buttons = []
+    for i, item in enumerate(history):
+        label = item.get("wb", "") if isinstance(item, dict) else item
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"hsearch:{i}")])
     await message.answer("История",
                          reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@dp.callback_query(F.data.startswith("search:"))
+@dp.callback_query(F.data.startswith("hsearch:"))
 async def handle_history_search(callback):
-    query = callback.data[len("search:"):]
+    idx = int(callback.data[len("hsearch:"):])
+    history = user_history.get(callback.from_user.id, [])
+    if idx >= len(history):
+        await callback.answer("Запись не найдена")
+        return
+    item = history[idx]
+    # Поддержка старого формата (строка) и нового (словарь)
+    if isinstance(item, dict):
+        queries = item
+    else:
+        queries = {"wb": item, "oz": item, "ali": item, "ym": item}
     await callback.answer()
-    await callback.message.answer(f"*{query}*", parse_mode="Markdown",
-                                   reply_markup=build_keyboard(query))
+    display = queries.get("wb", "")
+    await callback.message.answer(f"*{display}*", parse_mode="Markdown",
+                                   reply_markup=build_keyboard(queries))
 
 
 @dp.message(F.photo)
@@ -237,7 +278,6 @@ async def handle_text(message: Message):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Set mini-app button in bot menu
     try:
         await bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(text="Открыть", web_app=WebAppInfo(url=APP_URL))
@@ -246,14 +286,12 @@ async def lifespan(app: FastAPI):
         pass
 
     if IS_PRODUCTION:
-        # Production: webhook mode — stateless, works with autoscale
         webhook_url = f"{APP_URL}{WEBHOOK_PATH}"
         await bot.set_webhook(webhook_url, drop_pending_updates=True)
         logging.info(f"Webhook set: {webhook_url}")
         yield
         await bot.delete_webhook()
     else:
-        # Development: long-polling mode
         task = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
         yield
         task.cancel()
@@ -266,7 +304,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-os.makedirs(STATIC_DIR, exist_ok=True)  # создаёт папку если не существует
+os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -296,15 +334,16 @@ async def telegram_webhook(request: Request):
 async def analyze_endpoint(file: UploadFile = File(...)):
     image_bytes = await file.read()
     try:
-        query = analyze_image(image_bytes)
+        queries = analyze_image(image_bytes)
     except Exception as e:
         logging.error(f"Analyze endpoint error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
     return {
-        "query": query,
-        "wb":  f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote(query)}",
-        "oz":  f"https://www.ozon.ru/search/?text={quote(query)}",
-        "ali": f"https://aliexpress.ru/wholesale?SearchText={quote(query)}",
+        "query": queries.get("wb", ""),
+        "wb":  f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote(queries['wb'])}",
+        "oz":  f"https://www.ozon.ru/search/?text={quote(queries['oz'])}",
+        "ali": f"https://aliexpress.ru/wholesale?SearchText={quote(queries['ali'])}",
+        "ym":  f"https://market.yandex.ru/search?text={quote(queries['ym'])}",
     }
 
 
