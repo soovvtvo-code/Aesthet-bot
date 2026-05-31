@@ -91,18 +91,19 @@ def save_to_history(user_id: int, queries: dict):
     persist_history()
 
 
-# ── Umniy Poisk (Gemini PRO + DuckDuckGo) ─────────────────────────────────────
+# ── Umniy Poisk (Gemini Flash + Агрессивный промпт + DuckDuckGo) ──────────────
 
 def analyze_image(image_bytes: bytes) -> dict:
-    # ШАГ 1: Агрессивный поиск бренда (режим "Эксперт-оценщик" + модель PRO)
+    # ШАГ 1: Агрессивный поиск бренда (режим "Эксперт-оценщик")
     prompt_1 = (
         "Ты — элитный fashion-оценщик и историк моды. Изучи фото. "
         "Твоя главная цель — узнать ТОЧНЫЙ бренд и модель вещи (например, часы Jaeger-LeCoultre Étrier, сумка Jacquemus Le Chiquito). "
         "Если бренд распознан, обязательно назови его. Если вещь обычная — опиши её сухо (тип, материал, цвет)."
     )
     
+    # ИСПОЛЬЗУЕМ БЕЗОТКАЗНУЮ МОДЕЛЬ FLASH
     resp_1 = gemini_client.models.generate_content(
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             prompt_1,
@@ -139,8 +140,9 @@ def analyze_image(image_bytes: bytes) -> dict:
       "ym": "запрос для Яндекс Маркет"
     }}"""
 
+    # ИСПОЛЬЗУЕМ БЕЗОТКАЗНУЮ МОДЕЛЬ FLASH
     resp_2 = gemini_client.models.generate_content(
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             prompt_2,
@@ -388,5 +390,3 @@ async def analyze_endpoint(file: UploadFile = File(...)):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, app_dir=os.path.dirname(__file__))
-
-
