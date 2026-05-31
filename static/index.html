@@ -265,6 +265,7 @@
     
     <p class="error-text" id="error-text"></p>
 
+    <!-- Тот самый новый видоискатель -->
     <div class="loader-container" id="loader">
       <div class="viewfinder">
         <div class="vf-corner vf-tl"></div>
@@ -358,7 +359,9 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
-        queryText.textContent = data.query;
+        // Главное изменение: теперь на экран выводится красивое имя вещи (data.item_name)
+        queryText.textContent = data.item_name;
+        
         btnWb.href  = data.wb;
         btnOz.href  = data.oz;
         btnAli.href = data.ali;
@@ -395,5 +398,6 @@
   </script>
 </body>
 </html>
+
 
 
