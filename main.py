@@ -91,18 +91,18 @@ def save_to_history(user_id: int, queries: dict):
     persist_history()
 
 
-# ── Umniy Poisk (Gemini + DuckDuckGo) ─────────────────────────────────────────
+# ── Umniy Poisk (Gemini PRO + DuckDuckGo) ─────────────────────────────────────
 
 def analyze_image(image_bytes: bytes) -> dict:
-    # ШАГ 1: Базовый коммерческий анализ картинки + поиск бренда
+    # ШАГ 1: Агрессивный поиск бренда (режим "Эксперт-оценщик" + модель PRO)
     prompt_1 = (
-        "Опиши главную вещь на фото. Если ты узнаешь конкретный бренд или модель "
-        "(например, часы Jaeger-LeCoultre, кроссовки Nike Air Force и т.д.), обязательно назови их. "
-        "Если бренд неизвестен — опиши вещь сухо: тип, материал, цвет, отличительная деталь."
+        "Ты — элитный fashion-оценщик и историк моды. Изучи фото. "
+        "Твоя главная цель — узнать ТОЧНЫЙ бренд и модель вещи (например, часы Jaeger-LeCoultre Étrier, сумка Jacquemus Le Chiquito). "
+        "Если бренд распознан, обязательно назови его. Если вещь обычная — опиши её сухо (тип, материал, цвет)."
     )
     
     resp_1 = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-pro",
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             prompt_1,
@@ -110,35 +110,37 @@ def analyze_image(image_bytes: bytes) -> dict:
     )
     base_query = resp_1.text.strip()
 
-    # ШАГ 2: Сверка с реальными рыночными названиями (DuckDuckGo)
+    # ШАГ 2: Сверка с рынком для поиска аналогов
     ddg_results = []
     try:
         with DDGS() as ddgs:
-            results = ddgs.text(f"{base_query} купить", region='ru-ru', max_results=5)
+            # Ищем аналоги без слова "купить", чтобы не собирать дешевый спам
+            results = ddgs.text(f"{base_query} стиль", region='ru-ru', max_results=4)
             ddg_results = [r.get('title', '') for r in results]
     except Exception as e:
         logging.warning(f"DDG Search error: {e}")
 
-    # ШАГ 3: Финальный JSON на основе рынка
+    # ШАГ 3: Разделение логики (Точное имя отдельно, маркетплейсы отдельно)
     market_context = "\n".join(ddg_results) if ddg_results else "Нет данных из сети."
     
-    prompt_2 = f"""Вот базовая вещь с фото: {base_query}
-    Вот как похожие товары прямо сейчас называются в интернет-магазинах:
-    {market_context}
+    prompt_2 = f"""Вот первоначальный анализ вещи от эксперта: {base_query}
+    Вот заголовки из сети: {market_context}
 
-    Опираясь на эти данные, создай идеальный ответ.
-    
+    Твоя задача:
+    1. Для поля 'item_name' возьми самое точное и красивое название из анализа эксперта. Если там упомянут бренд (например, Jaeger-LeCoultre) — он ОБЯЗАТЕЛЬНО должен быть в item_name.
+    2. Для маркетплейсов (wb, oz, ali, ym) создай упрощенные запросы. Маркетплейсы не умеют искать люкс. Опиши вещь так, чтобы найти ПОХОЖУЮ.
+
     Верни ТОЛЬКО JSON, без markdown, без пояснений, строго в таком формате:
     {{
-      "item_name": "Точное и красивое название вещи (Например: 'Часы Jaeger-LeCoultre Étrier' или 'Кожаная сумка-кроссбоди')",
-      "wb": "запрос для Wildberries (строго 3-4 ключевых слова без бренда, если это люкс)",
-      "oz": "запрос для Ozon (чуть точнее и шире)",
-      "ali": "query for AliExpress (in English, keywords only)",
+      "item_name": "Точное название вещи с брендом",
+      "wb": "запрос для Wildberries (3-4 слова, без люксовых брендов)",
+      "oz": "запрос для Ozon (чуть точнее)",
+      "ali": "query for AliExpress (in English)",
       "ym": "запрос для Яндекс Маркет"
     }}"""
 
     resp_2 = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-pro",
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             prompt_2,
@@ -146,8 +148,7 @@ def analyze_image(image_bytes: bytes) -> dict:
     )
 
     text = resp_2.text.strip()
-    text = re.sub(r"```json\s*|\s*
-```", "", text).strip()
+    text = re.sub(r"```json\s*|\s*```", "", text).strip()
     queries = json.loads(text)
     
     fallback = queries.get("wb") or queries.get("oz") or "Товар"
@@ -205,7 +206,6 @@ async def process_single_photo(message: Message, image_data: bytes):
         return
     save_to_history(message.from_user.id, queries)
     
-    # Теперь и в обычном чате будет показываться точное название
     display = queries.get("item_name", queries.get("wb", ""))
     await message.answer(f"*{display}*", parse_mode="Markdown",
                          reply_markup=build_keyboard(queries))
@@ -388,6 +388,5 @@ async def analyze_endpoint(file: UploadFile = File(...)):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, app_dir=os.path.dirname(__file__))
-
 
 
