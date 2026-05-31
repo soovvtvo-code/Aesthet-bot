@@ -9,156 +9,332 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #000000;
-      --fg:       #ffffff;
-      --muted:    rgba(255,255,255,0.35);
-      --border:   rgba(255,255,255,0.12);
-      --btn-bg:   rgba(255,255,255,0.06);
-      --btn-hover:rgba(255,255,255,0.11);
-      --radius:   2px;
-      --font:     -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-    }
-
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--fg);
-      font-family: var(--font);
-      -webkit-font-smoothing: antialiased;
-      overscroll-behavior: none;
+      --bg-color: #F3F3F6;
+      --card-bg:  #FFFFFF;
+      --text-main:#000000;
+      --text-sec: #8E8E93;
+      --border:   #E5E5EA;
+      --btn-bg:   #F2F2F7;
+      --accent:   #000000;
+      --font:     -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     }
 
     body {
+      background: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      padding: 20px;
+    }
+
+    /* ── Card Container ───────────────────────────────── */
+    .card {
+      background: var(--card-bg);
+      width: 100%;
+      max-width: 340px;
+      padding: 36px 24px;
+      border-radius: 28px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+    }
+
+    /* ── Header & Logo ────────────────────────────────── */
+    .header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-main);
+    }
+
+    /* ── Upload Zone ──────────────────────────────────── */
+    .upload-zone {
+      width: 100%;
+      background: var(--btn-bg);
+      border: 2px dashed #D1D1D6;
+      border-radius: 20px;
+      padding: 40px 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100dvh;
-      padding: 32px 24px;
-      gap: 48px;
-    }
-
-    /* ── Wordmark ─────────────────────────────────────── */
-    .wordmark {
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      color: var(--muted);
-      position: absolute;
-      top: 28px;
-      left: 50%;
-      transform: translateX(-50%);
-      white-space: nowrap;
-    }
-
-    /* ── Upload zone ──────────────────────────────────── */
-    .upload-zone {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
-      width: 100%;
-      max-width: 320px;
-    }
-
-    .upload-btn {
-      width: 100%;
-      padding: 18px 0;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--fg);
-      font-family: var(--font);
-      font-size: 13px;
-      font-weight: 400;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
       cursor: pointer;
-      border-radius: var(--radius);
-      transition: background 0.18s, border-color 0.18s;
+      transition: all 0.2s ease;
       -webkit-tap-highlight-color: transparent;
     }
-    .upload-btn:hover   { background: var(--btn-hover); border-color: rgba(255,255,255,0.28); }
-    .upload-btn:active  { background: rgba(255,255,255,0.15); }
-    .upload-btn:disabled { opacity: 0.3; cursor: default; }
 
-    /* ── Loading bar ──────────────────────────────────── */
-    .loader {
+    .upload-zone:active {
+      transform: scale(0.97);
+    }
+
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background: #EAEAEF;
+    }
+
+    .upload-icon {
+      margin-bottom: 12px;
+      opacity: 0.8;
+    }
+
+    .upload-text {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .upload-subtext {
+      font-size: 12px;
+      color: var(--text-sec);
+      margin-top: 6px;
+    }
+
+    /* ── Loader ───────────────────────────────────────── */
+    .loader-container {
       width: 100%;
-      max-width: 320px;
-      height: 1px;
-      background: var(--border);
-      overflow: hidden;
-      opacity: 0;
-      transition: opacity 0.2s;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
     }
-    .loader.visible { opacity: 1; }
+    .loader-container.visible { display: flex; }
+
     .loader-bar {
-      height: 100%;
-      width: 0%;
-      background: var(--fg);
-      animation: none;
+      width: 100%;
+      height: 4px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
     }
-    .loader.running .loader-bar {
-      animation: sweep 1.4s cubic-bezier(0.4,0,0.2,1) infinite;
+    .loader-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: 40%;
+      background: var(--accent);
+      border-radius: 4px;
+      animation: load 1.2s ease-in-out infinite;
     }
-    @keyframes sweep {
-      0%   { width: 0%;   margin-left: 0%;   }
-      50%  { width: 60%;  margin-left: 20%;  }
-      100% { width: 0%;   margin-left: 100%; }
+    @keyframes load {
+      0% { left: -40%; }
+      100% { left: 100%; }
     }
 
-    /* ── Result ───────────────────────────────────────── */
+    /* ── Results ──────────────────────────────────────── */
     .result {
       width: 100%;
-      max-width: 320px;
-      display: flex;
+      display: none;
       flex-direction: column;
       gap: 20px;
-      opacity: 0;
-      transform: translateY(12px);
-      transition: opacity 0.38s ease, transform 0.38s ease;
-      pointer-events: none;
+      animation: fadeIn 0.4s ease forwards;
     }
-    .result.visible {
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
+    .result.visible { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .query-text {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 600;
-      line-height: 1.35;
-      letter-spacing: -0.01em;
-      color: var(--fg);
+      color: var(--text-main);
+      text-align: center;
+      line-height: 1.4;
     }
 
-    /* ── Marketplace buttons ──────────────────────────── */
     .markets {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
+
     .market-btn {
-      display: block;
-      padding: 13px 4px;
-      background: var(--btn-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--fg);
-      font-family: var(--font);
-      font-size: 11px;
-      font-weight: 400;
-      letter-spacing: 0.08em;
-      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 8px;
+      background: #FFFFFF;
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
       text-decoration: none;
-      text-transform: uppercase;
-      transition: background 0.15s, border-color 0.15s;
+      transition: all 0.2s;
       -webkit-tap-highlight-color: transparent;
     }
-    .market-btn:hover  { background: var(--btn-hover); border-color: rgba(255,255,255,0.25); }
-    .market-btn:active { background: rgba(255,255,255,0.15);
+    .market-btn:active {
+      background: var(--btn-bg);
+      border-color: #D1D1D6;
+    }
 
+    .reset-btn {
+      margin-top: 8px;
+      background: none;
+      border: none;
+      color: var(--text-sec);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 8px;
+      transition: color 0.2s;
+    }
+    .reset-btn:active { color: var(--text-main); }
+
+    .error-text {
+      font-size: 13px;
+      color: #FF3B30;
+      text-align: center;
+      display: none;
+      font-weight: 500;
+    }
+    .error-text.visible { display: block; }
+
+    #file-input { display: none; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="header">
+      <!-- Современный логотип видоискателя для визуального поиска -->
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 8V5a1 1 0 0 1 1-1h3"/>
+        <path d="M20 8V5a1 1 0 0 0-1-1h-3"/>
+        <path d="M4 16v3a1 1 0 0 0 1 1h3"/>
+        <path d="M20 16v3a1 1 0 0 1-1 1h-3"/>
+        <path d="M12 9l1.25 1.75L15 12l-1.75 1.25L12 15l-1.25-1.75L9 12l1.75-1.25z" fill="#000000"/>
+      </svg>
+      <span class="brand-title">Aesthet</span>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*" />
+
+    <div class="upload-zone" id="upload-zone">
+      <svg class="upload-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <div class="upload-text">Загрузить фото</div>
+      <div class="upload-subtext">Поиск по маркетплейсам</div>
+    </div>
+    
+    <p class="error-text" id="error-text"></p>
+
+    <div class="loader-container" id="loader">
+      <div class="upload-text" style="font-size: 14px;">Распознаем вещь...</div>
+      <div class="loader-bar"><div class="loader-fill"></div></div>
+    </div>
+
+    <div class="result" id="result">
+      <p class="query-text" id="query-text"></p>
+      <div class="markets">
+        <a class="market-btn" id="btn-wb"  href="#">Wildberries</a>
+        <a class="market-btn" id="btn-oz"  href="#">Ozon</a>
+        <a class="market-btn" id="btn-ali" href="#">AliExpress</a>
+        <a class="market-btn" id="btn-ym"  href="#">Яндекс Маркет</a>
+      </div>
+      <button class="reset-btn" id="reset-btn">Искать другое фото</button>
+    </div>
+  </div>
+
+  <script>
+    // Настраиваем цвета шапки Telegram под светлый дизайн
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      try {
+        tg.setHeaderColor('#F3F3F6');
+        tg.setBackgroundColor('#F3F3F6');
+      } catch(e) {}
+    }
+
+    const fileInput  = document.getElementById('file-input');
+    const uploadZone = document.getElementById('upload-zone');
+    const loader     = document.getElementById('loader');
+    const result     = document.getElementById('result');
+    const queryText  = document.getElementById('query-text');
+    const btnWb      = document.getElementById('btn-wb');
+    const btnOz      = document.getElementById('btn-oz');
+    const btnAli     = document.getElementById('btn-ali');
+    const btnYm      = document.getElementById('btn-ym');
+    const resetBtn   = document.getElementById('reset-btn');
+    const errorText  = document.getElementById('error-text');
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      await analyze(file);
+    });
+
+    async function analyze(file) {
+      errorText.classList.remove('visible');
+      errorText.textContent = '';
+      uploadZone.style.display = 'none';
+      result.classList.remove('visible');
+      loader.classList.add('visible');
+
+      const form = new FormData();
+      form.append('file', file);
+
+      try {
+        const res = await fetch('/analyze', { method: 'POST', body: form });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        queryText.textContent = data.query;
+        btnWb.href  = data.wb;
+        btnOz.href  = data.oz;
+        btnAli.href = data.ali;
+        btnYm.href  = data.ym;
+
+        [btnWb, btnOz, btnAli, btnYm].forEach(btn => {
+          btn.onclick = e => {
+            if (tg && tg.openLink) {
+              e.preventDefault();
+              tg.openLink(btn.href);
+            }
+          };
+        });
+
+        loader.classList.remove('visible');
+        result.classList.add('visible');
+
+      } catch (err) {
+        loader.classList.remove('visible');
+        uploadZone.style.display = 'flex';
+        errorText.textContent = 'Не удалось распознать товар. Попробуйте ещё раз.';
+        errorText.classList.add('visible');
+      } finally {
+        fileInput.value = '';
+      }
+    }
+
+    resetBtn.addEventListener('click', () => {
+      result.classList.remove('visible');
+      errorText.classList.remove('visible');
+      uploadZone.style.display = 'flex';
+    });
+  </script>
 </body>
 </html>
+
