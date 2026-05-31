@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
 from urllib.parse import quote
+from duckduckgo_search import DDGS
 
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, Request, Response
@@ -49,17 +50,6 @@ HEADERS = {
     )
 }
 
-# Gemini возвращает JSON с отдельным запросом для каждой площадки
-GEMINI_PROMPT = """Посмотри на товар на фото. Создай поисковый запрос для каждого маркетплейса — каждый оптимизирован под алгоритм и стиль этой площадки.
-
-Верни ТОЛЬКО JSON, без markdown, без ```, без пояснений:
-{
-  "wb": "запрос для Wildberries: как продавцы пишут название — тип товара + материал + цвет + фасон, коротко, по-русски",
-  "oz": "запрос для Ozon: чуть полнее чем WB, включи характеристики которые фильтруют покупатели",
-  "ali": "query for AliExpress in English: product type + material + color + style, keywords only",
-  "ym": "запрос для Яндекс Маркет: естественный русский язык, как человек ищет в поисковике"
-}"""
-
 # ── State ─────────────────────────────────────────────────────────────────────
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -95,33 +85,76 @@ user_history: dict = load_history()
 def save_to_history(user_id: int, queries: dict):
     h = user_history[user_id]
     wb = queries.get("wb", "")
-    # Убираем дубликат если уже есть
     h = [item for item in h if (item.get("wb", "") if isinstance(item, dict) else item) != wb]
     h.insert(0, queries)
     user_history[user_id] = h[:HISTORY_LIMIT]
     persist_history()
 
 
-# ── Gemini ────────────────────────────────────────────────────────────────────
+# ── Umniy Poisk (Gemini + DuckDuckGo) ─────────────────────────────────────────
 
 def analyze_image(image_bytes: bytes) -> dict:
-    response = gemini_client.models.generate_content(
+    # ШАГ 1: Базовый коммерческий анализ картинки
+    prompt_1 = (
+        "Опиши главную вещь на фото максимально сухо, как для каталога: "
+        "тип товара, материал, цвет, отличительная деталь. Никакой воды и художеств."
+    )
+    
+    resp_1 = gemini_client.models.generate_content(
         model="gemini-2.5-flash",
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-            GEMINI_PROMPT,
+            prompt_1,
         ],
     )
-    text = response.text.strip()
-    # Убираем markdown-блоки если модель их добавила
+    base_query = resp_1.text.strip()
+
+    # ШАГ 2: Сверка с реальными рыночными названиями (DuckDuckGo)
+    ddg_results = []
+    try:
+        with DDGS() as ddgs:
+            # Ищем, как магазины продают похожие вещи
+            results = ddgs.text(f"{base_query} купить интернет магазин", region='ru-ru', max_results=5)
+            ddg_results = [r.get('title', '') for r in results]
+    except Exception as e:
+        logging.warning(f"DDG Search error: {e}")
+
+    # ШАГ 3: Финальный JSON на основе рынка
+    market_context = "\n".join(ddg_results) if ddg_results else "Нет данных из сети."
+    
+    prompt_2 = f"""Вот базовая вещь с фото: {base_query}
+    Вот как похожие товары прямо сейчас называются в интернет-магазинах:
+    {market_context}
+
+    Опираясь на эти рыночные заголовки, создай идеальные коммерческие поисковые запросы.
+    Убери все лишние слова. Оставь только жесткие теги (в именительном падеже), которые люди реально вбивают в маркетплейсы.
+
+    Верни ТОЛЬКО JSON, без markdown, без пояснений:
+    {{
+      "wb": "запрос для Wildberries (строго 3-4 ключевых слова)",
+      "oz": "запрос для Ozon (чуть точнее и шире)",
+      "ali": "query for AliExpress (in English, keywords only)",
+      "ym": "запрос для Яндекс Маркет"
+    }}"""
+
+    resp_2 = gemini_client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            prompt_2,
+        ],
+    )
+
+    text = resp_2.text.strip()
     text = re.sub(r"```json\s*|\s*```", "", text).strip()
     queries = json.loads(text)
-    # Гарантируем что все ключи есть
+    
     fallback = queries.get("wb") or queries.get("oz") or "товар"
     queries.setdefault("wb", fallback)
     queries.setdefault("oz", fallback)
     queries.setdefault("ali", fallback)
     queries.setdefault("ym", fallback)
+    
     return queries
 
 
@@ -235,7 +268,6 @@ async def handle_history_search(callback):
         await callback.answer("Запись не найдена")
         return
     item = history[idx]
-    # Поддержка старого формата (строка) и нового (словарь)
     if isinstance(item, dict):
         queries = item
     else:
@@ -352,4 +384,5 @@ async def analyze_endpoint(file: UploadFile = File(...)):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, app_dir=os.path.dirname(__file__))
+
 
