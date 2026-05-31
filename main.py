@@ -25,7 +25,7 @@ from aiogram.filters import Command
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BOT_TOKEN      = os.environ.get("BOT_TOKEN", "8748736196:AAHBGM7DnJaYZKS43h5XOT_Lc9PLXc8sOic")
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "8748736196:AAF-MRh5p2InSqy-rA5hOrKQ4BUZjdeo-cs")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEV_DOMAIN     = os.environ.get("REPLIT_DEV_DOMAIN", "localhost")
 # In production, MINI_APP_URL is set to the deployed .replit.app domain
