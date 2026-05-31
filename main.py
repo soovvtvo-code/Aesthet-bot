@@ -25,8 +25,8 @@ from aiogram.filters import Command
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BOT_TOKEN      = "8748736196:AAHBGM7DnJaYZKS43h5XOT_Lc9PLXc8sOic"
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "8748736196:AAHBGM7DnJaYZKS43h5XOT_Lc9PLXc8sOic")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEV_DOMAIN     = os.environ.get("REPLIT_DEV_DOMAIN", "localhost")
 # In production, MINI_APP_URL is set to the deployed .replit.app domain
 MINI_APP_URL   = os.environ.get("MINI_APP_URL", "")
@@ -266,6 +266,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(STATIC_DIR, exist_ok=True)  # создаёт папку если не существует
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -276,7 +277,10 @@ async def healthz():
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
-    with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if not os.path.exists(index_path):
+        return HTMLResponse("<html><body><h1>Aesthet Bot is running</h1></body></html>")
+    with open(index_path, encoding="utf-8") as f:
         return f.read()
 
 
@@ -309,3 +313,4 @@ async def analyze_endpoint(file: UploadFile = File(...)):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, app_dir=os.path.dirname(__file__))
+
