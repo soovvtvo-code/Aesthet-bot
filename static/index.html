@@ -31,7 +31,6 @@
       padding: 20px;
     }
 
-    /* ── Card Container ───────────────────────────────── */
     .card {
       background: var(--card-bg);
       width: 100%;
@@ -45,7 +44,6 @@
       gap: 28px;
     }
 
-    /* ── Header & Logo ────────────────────────────────── */
     .header {
       display: flex;
       flex-direction: column;
@@ -61,7 +59,6 @@
       color: var(--text-main);
     }
 
-    /* ── Upload Zone ──────────────────────────────────── */
     .upload-zone {
       width: 100%;
       background: var(--btn-bg);
@@ -77,14 +74,7 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    .upload-zone:active {
-      transform: scale(0.97);
-    }
-
-    .upload-zone.dragover {
-      border-color: var(--accent);
-      background: #EAEAEF;
-    }
+    .upload-zone:active { transform: scale(0.97); }
 
     .upload-icon {
       margin-bottom: 12px;
@@ -103,38 +93,77 @@
       margin-top: 6px;
     }
 
-    /* ── Loader ───────────────────────────────────────── */
+    /* ── Анимация сканера (Видоискатель) ────────────────────────── */
     .loader-container {
       width: 100%;
       display: none;
       flex-direction: column;
       align-items: center;
-      gap: 16px;
+      gap: 24px;
+      padding: 16px 0;
     }
     .loader-container.visible { display: flex; }
 
-    .loader-bar {
-      width: 100%;
-      height: 4px;
-      background: var(--border);
-      border-radius: 4px;
-      overflow: hidden;
+    .viewfinder {
       position: relative;
-    }
-    .loader-fill {
-      position: absolute;
-      top: 0; left: 0; bottom: 0;
-      width: 40%;
-      background: var(--accent);
-      border-radius: 4px;
-      animation: load 1.2s ease-in-out infinite;
-    }
-    @keyframes load {
-      0% { left: -40%; }
-      100% { left: 100%; }
+      width: 56px;
+      height: 56px;
+      /* Эффект поиска фокуса (дыхание) */
+      animation: vf-focus 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
     }
 
-    /* ── Results ──────────────────────────────────────── */
+    @keyframes vf-focus {
+      0% { transform: scale(1); }
+      100% { transform: scale(0.85); }
+    }
+
+    /* 4 уголка прицела */
+    .vf-corner {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-color: var(--accent);
+      border-style: solid;
+    }
+    .vf-tl { top: 0; left: 0; border-width: 3px 0 0 3px; border-top-left-radius: 4px; }
+    .vf-tr { top: 0; right: 0; border-width: 3px 3px 0 0; border-top-right-radius: 4px; }
+    .vf-bl { bottom: 0; left: 0; border-width: 0 0 3px 3px; border-bottom-left-radius: 4px; }
+    .vf-br { bottom: 0; right: 0; border-width: 0 3px 3px 0; border-bottom-right-radius: 4px; }
+
+    /* Бегающий луч сканера */
+    .vf-line {
+      position: absolute;
+      left: 5%;
+      width: 90%;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+      animation: vf-scan 1.2s linear infinite alternate;
+    }
+
+    @keyframes vf-scan {
+      0% { top: 5%; opacity: 0; }
+      15% { opacity: 1; }
+      85% { opacity: 1; }
+      100% { top: 95%; opacity: 0; }
+    }
+
+    .loading-status {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-main);
+      text-align: center;
+      min-height: 20px;
+      animation: fadeInText 0.3s ease;
+    }
+
+    @keyframes fadeInText {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Результаты ──────────────────────────────────── */
     .result {
       width: 100%;
       display: none;
@@ -212,7 +241,6 @@
 
   <div class="card">
     <div class="header">
-      <!-- Современный логотип видоискателя для визуального поиска -->
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 8V5a1 1 0 0 1 1-1h3"/>
         <path d="M20 8V5a1 1 0 0 0-1-1h-3"/>
@@ -238,8 +266,14 @@
     <p class="error-text" id="error-text"></p>
 
     <div class="loader-container" id="loader">
-      <div class="upload-text" style="font-size: 14px;">Распознаем вещь...</div>
-      <div class="loader-bar"><div class="loader-fill"></div></div>
+      <div class="viewfinder">
+        <div class="vf-corner vf-tl"></div>
+        <div class="vf-corner vf-tr"></div>
+        <div class="vf-corner vf-bl"></div>
+        <div class="vf-corner vf-br"></div>
+        <div class="vf-line"></div>
+      </div>
+      <div class="loading-status" id="loading-status">Сканируем фото...</div>
     </div>
 
     <div class="result" id="result">
@@ -255,7 +289,6 @@
   </div>
 
   <script>
-    // Настраиваем цвета шапки Telegram под светлый дизайн
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.ready();
@@ -269,6 +302,7 @@
     const fileInput  = document.getElementById('file-input');
     const uploadZone = document.getElementById('upload-zone');
     const loader     = document.getElementById('loader');
+    const statusText = document.getElementById('loading-status');
     const result     = document.getElementById('result');
     const queryText  = document.getElementById('query-text');
     const btnWb      = document.getElementById('btn-wb');
@@ -277,6 +311,16 @@
     const btnYm      = document.getElementById('btn-ym');
     const resetBtn   = document.getElementById('reset-btn');
     const errorText  = document.getElementById('error-text');
+
+    const statuses = [
+      "Сканируем силуэт и детали...",
+      "Распознаем материалы...",
+      "Сверяемся с каталогами магазинов...",
+      "Анализируем тренды...",
+      "Формируем точные запросы...",
+      "Почти готово..."
+    ];
+    let statusInterval;
 
     uploadZone.addEventListener('click', () => fileInput.click());
 
@@ -291,7 +335,20 @@
       errorText.textContent = '';
       uploadZone.style.display = 'none';
       result.classList.remove('visible');
+      
       loader.classList.add('visible');
+      let statusIndex = 0;
+      statusText.textContent = statuses[0];
+      
+      statusInterval = setInterval(() => {
+        statusIndex++;
+        if (statusIndex < statuses.length) {
+          statusText.style.animation = 'none';
+          statusText.offsetHeight; 
+          statusText.style.animation = 'fadeInText 0.3s ease';
+          statusText.textContent = statuses[statusIndex];
+        }
+      }, 1500);
 
       const form = new FormData();
       form.append('file', file);
@@ -325,6 +382,7 @@
         errorText.textContent = 'Не удалось распознать товар. Попробуйте ещё раз.';
         errorText.classList.add('visible');
       } finally {
+        clearInterval(statusInterval);
         fileInput.value = '';
       }
     }
@@ -337,4 +395,5 @@
   </script>
 </body>
 </html>
+
 
