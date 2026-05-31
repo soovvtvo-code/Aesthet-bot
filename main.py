@@ -94,10 +94,11 @@ def save_to_history(user_id: int, queries: dict):
 # ── Umniy Poisk (Gemini + DuckDuckGo) ─────────────────────────────────────────
 
 def analyze_image(image_bytes: bytes) -> dict:
-    # ШАГ 1: Базовый коммерческий анализ картинки
+    # ШАГ 1: Базовый коммерческий анализ картинки + поиск бренда
     prompt_1 = (
-        "Опиши главную вещь на фото максимально сухо, как для каталога: "
-        "тип товара, материал, цвет, отличительная деталь. Никакой воды и художеств."
+        "Опиши главную вещь на фото. Если ты узнаешь конкретный бренд или модель "
+        "(например, часы Jaeger-LeCoultre, кроссовки Nike Air Force и т.д.), обязательно назови их. "
+        "Если бренд неизвестен — опиши вещь сухо: тип, материал, цвет, отличительная деталь."
     )
     
     resp_1 = gemini_client.models.generate_content(
@@ -113,8 +114,7 @@ def analyze_image(image_bytes: bytes) -> dict:
     ddg_results = []
     try:
         with DDGS() as ddgs:
-            # Ищем, как магазины продают похожие вещи
-            results = ddgs.text(f"{base_query} купить интернет магазин", region='ru-ru', max_results=5)
+            results = ddgs.text(f"{base_query} купить", region='ru-ru', max_results=5)
             ddg_results = [r.get('title', '') for r in results]
     except Exception as e:
         logging.warning(f"DDG Search error: {e}")
@@ -126,12 +126,12 @@ def analyze_image(image_bytes: bytes) -> dict:
     Вот как похожие товары прямо сейчас называются в интернет-магазинах:
     {market_context}
 
-    Опираясь на эти рыночные заголовки, создай идеальные коммерческие поисковые запросы.
-    Убери все лишние слова. Оставь только жесткие теги (в именительном падеже), которые люди реально вбивают в маркетплейсы.
-
-    Верни ТОЛЬКО JSON, без markdown, без пояснений:
+    Опираясь на эти данные, создай идеальный ответ.
+    
+    Верни ТОЛЬКО JSON, без markdown, без пояснений, строго в таком формате:
     {{
-      "wb": "запрос для Wildberries (строго 3-4 ключевых слова)",
+      "item_name": "Точное и красивое название вещи (Например: 'Часы Jaeger-LeCoultre Étrier' или 'Кожаная сумка-кроссбоди')",
+      "wb": "запрос для Wildberries (строго 3-4 ключевых слова без бренда, если это люкс)",
       "oz": "запрос для Ozon (чуть точнее и шире)",
       "ali": "query for AliExpress (in English, keywords only)",
       "ym": "запрос для Яндекс Маркет"
@@ -146,10 +146,12 @@ def analyze_image(image_bytes: bytes) -> dict:
     )
 
     text = resp_2.text.strip()
-    text = re.sub(r"```json\s*|\s*```", "", text).strip()
+    text = re.sub(r"```json\s*|\s*
+```", "", text).strip()
     queries = json.loads(text)
     
-    fallback = queries.get("wb") or queries.get("oz") or "товар"
+    fallback = queries.get("wb") or queries.get("oz") or "Товар"
+    queries.setdefault("item_name", fallback)
     queries.setdefault("wb", fallback)
     queries.setdefault("oz", fallback)
     queries.setdefault("ali", fallback)
@@ -202,7 +204,9 @@ async def process_single_photo(message: Message, image_data: bytes):
         await message.answer("Не удалось распознать товар.")
         return
     save_to_history(message.from_user.id, queries)
-    display = queries.get("wb", "")
+    
+    # Теперь и в обычном чате будет показываться точное название
+    display = queries.get("item_name", queries.get("wb", ""))
     await message.answer(f"*{display}*", parse_mode="Markdown",
                          reply_markup=build_keyboard(queries))
 
@@ -254,7 +258,7 @@ async def cmd_history(message: Message):
         return
     buttons = []
     for i, item in enumerate(history):
-        label = item.get("wb", "") if isinstance(item, dict) else item
+        label = item.get("item_name", item.get("wb", "")) if isinstance(item, dict) else item
         buttons.append([InlineKeyboardButton(text=label, callback_data=f"hsearch:{i}")])
     await message.answer("История",
                          reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -271,9 +275,9 @@ async def handle_history_search(callback):
     if isinstance(item, dict):
         queries = item
     else:
-        queries = {"wb": item, "oz": item, "ali": item, "ym": item}
+        queries = {"item_name": item, "wb": item, "oz": item, "ali": item, "ym": item}
     await callback.answer()
-    display = queries.get("wb", "")
+    display = queries.get("item_name", queries.get("wb", ""))
     await callback.message.answer(f"*{display}*", parse_mode="Markdown",
                                    reply_markup=build_keyboard(queries))
 
@@ -371,7 +375,7 @@ async def analyze_endpoint(file: UploadFile = File(...)):
         logging.error(f"Analyze endpoint error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
     return {
-        "query": queries.get("wb", ""),
+        "item_name": queries.get("item_name", "Неизвестный товар"),
         "wb":  f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote(queries['wb'])}",
         "oz":  f"https://www.ozon.ru/search/?text={quote(queries['oz'])}",
         "ali": f"https://aliexpress.ru/wholesale?SearchText={quote(queries['ali'])}",
@@ -384,5 +388,6 @@ async def analyze_endpoint(file: UploadFile = File(...)):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, app_dir=os.path.dirname(__file__))
+
 
 
